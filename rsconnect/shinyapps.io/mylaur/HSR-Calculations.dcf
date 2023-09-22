@@ -5,9 +5,9 @@ account: mylaur
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 9922162
-bundleId: 7706777
+bundleId: 7716605
 url: https://mylaur.shinyapps.io/HSR-Calculations/
 version: 1
 asMultiple: FALSE
 asStatic: FALSE
-ignoredFiles: Test/app.R
+ignoredFiles: test/app.R

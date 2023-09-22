@@ -67,6 +67,9 @@ ui <- fluidPage(
         )
       ),
     ),
+
+    ## ATK Panel ---------------------------------------------------------------
+
     tabPanel(
       "ATK",
       sidebarLayout(
@@ -82,38 +85,45 @@ ui <- fluidPage(
                 choices = c("ATK% " = "atk_toggle", "Crit Rate" = "crit_rate_toggle", "Crit Damage" = "crit_damage_toggle", "Damage%" = "dmg_toggle"),
                 selected = "atk_toggle"
               ),
-              numericInput("atk_percent", "ATK Bonus (%)", 0, min = 0, max = 1000),
-              numericInput("flat_atk", "Flat ATK", 0, min = 0, max = 1000),
-              numericInput("crit_rate", "CRIT Rate (%)", 0, min = 0, max = 100),
-              numericInput("crit_damage", "CRIT Damage (%)", 0, min = 0, max = 1000),
-              numericInput("dmg_multiplier", "DMG Multiplier (%)", 0, min = 0, max = 1000),
+              textInput("atk_percent", "ATK Bonus (%)", "0"),
+              textInput("flat_atk", "Flat ATK", "0"),
+              textInput("crit_rate", "CRIT Rate (%)", "0"),
+              textInput("crit_damage", "CRIT Damage (%)", "0"),
+              textInput("dmg_multiplier", "DMG Multiplier (%)", "0"),
               sliderInput("x_limit_atk", "X-axis Limit:", value = c(0, 2000), min = 0, max = 5000),
               checkboxInput("hp_scaling", "HP Scaling", value = FALSE),
               checkboxInput("def_scaling", "DEF Scaling", value = FALSE)
             ),
             tabPanel(
               "Fixed Stats", # Fixed Stats panel
-              numericInput("atk_percent_base", "ATK Bonus (%)", 0, min = 0, max = 1000),
-              numericInput("flat_atk_base", "Flat ATK", 0, min = 0, max = 1000),
-              numericInput("crit_rate_base", "CRIT Rate (%)", 5, min = 0, max = 100),
-              numericInput("crit_damage_base", "CRIT Damage (%)", 0, min = 0, max = 1000),
-              numericInput("dmg_multiplier_base", "DMG Multiplier (%)", 0, min = 0, max = 1000),
+              textInput("atk_percent_base", "ATK Bonus (%)", "0"),
+              textInput("flat_atk_base", "Flat ATK", "0"),
+              textInput("crit_rate_base", "CRIT Rate (%)", "5"),
+              textInput("crit_damage_base", "CRIT Damage (%)", "50"),
+              textInput("dmg_multiplier_base", "DMG Multiplier (%)", "0"),
             )
           )
         ),
         # Main panel for displaying outputs (unique IDs within this tab)
         mainPanel(
           plotOutput("atk_plot"),
-          tableOutput("atk_character_stats"),
-          tableOutput("atk_lc_stats")
+          tableOutput("character_stats_atk"),
+          tableOutput("lc_stats_atk")
         )
       )
     )
   )
 )
 
+# Server ------------------------------------------------------------------
+
+
 server <- function(input, output, session) {
-  # Create a reactiveVal to store the calculated stat bonus (allows user to add inside the text box)
+  # EHP Calculator -----------------------------------------------------------
+
+
+  ## Create a reactiveVal to store the calculated stat bonus =================
+  # (allows user to add multiple values inside the box)
   calculated_numeric_input <- function(input_id) {
     calculated_value <- reactiveVal(0)
 
@@ -138,8 +148,18 @@ server <- function(input, output, session) {
   calculated_hp_percent <- calculated_numeric_input("hp_percent_input")
   calculated_flat_hp <- calculated_numeric_input("flat_hp_input")
   calculated_flat_def <- calculated_numeric_input("flat_def_input")
+  calculated_atk_percent <- calculated_numeric_input("atk_percent")
+  calculated_atk_percent_base <- calculated_numeric_input("atk_percent_base")
+  calculated_flat_atk <- calculated_numeric_input("flat_atk")
+  calculated_flat_atk_base <- calculated_numeric_input("flat_atk_base")
+  calculated_crit_rate <- calculated_numeric_input("crit_rate")
+  calculated_crit_rate_base <- calculated_numeric_input("crit_rate_base")
+  calculated_crit_damage <- calculated_numeric_input("crit_damage")
+  calculated_crit_damage_base <- calculated_numeric_input("crit_damage_base")
+  calculated_dmg_multiplier <- calculated_numeric_input("dmg_multiplier")
+  calculated_dmg_multiplier_base <- calculated_numeric_input("dmg_multiplier_base")
 
-  # Create a reactive expression to filter light cone options based on character selection
+  ## Create a reactive expression to filter light cone options ===============
   filtered_light_cones <- reactive({
     selected_character <- input$character_selection
     character_path <- character_data$character_path[character_data$character_name == selected_character]
@@ -157,6 +177,7 @@ server <- function(input, output, session) {
     choices <- filtered_light_cones()
     updateSelectInput(session, "lc_selection", choices = choices)
   })
+
 
 
   # Create a reactive expression for calculations
@@ -203,7 +224,9 @@ server <- function(input, output, session) {
       return(ehp)
     }
 
-  # Check if at least one checkbox is active
+
+  ## Render EHP Plot ---------------------------------------------------------
+
 
   output$ehp_plot <- renderPlot({
     ehp_curve <- ggplot() +
@@ -363,8 +386,24 @@ server <- function(input, output, session) {
     return(lc_stats)
   })
 
-  # ATK Plot Output ---------------------------------------------------------
+  # ATK Calculator ---------------------------------------------------------
 
+
+  # Filter light cones for ATK calculator
+  filtered_atk_light_cones <- reactive({
+    selected_character <- input$atk_character_selection
+    character_path <- character_data$character_path[character_data$character_name == selected_character]
+    atk_lc_data <- light_cone_data[light_cone_data$lc_path == character_path, ]
+
+    # Return the names of the filtered light cones
+    atk_lc_data$lc_name
+  })
+
+  # Update the choices in the light_cone dropdown based on the reactive expression
+  observe({
+    choices <- filtered_atk_light_cones()
+    updateSelectInput(session, "atk_lc_selection", choices = choices)
+  })
 
   calculate_average_crit <- function(crit_rate, crit_damage) {
     crit_rate <-
@@ -377,11 +416,11 @@ server <- function(input, output, session) {
   calculate_damage <-
     function(base_atk,
              skill_multiplier = 100,
-             atk_percent = input$atk_percent_base,
-             flat_atk = input$flat_atk_base,
-             crit_rate = input$crit_rate_base,
-             crit_damage = input$crit_damage_base,
-             dmg_multiplier = input$dmg_multiplier_base,
+             atk_percent = calculated_atk_percent_base(),
+             flat_atk = calculated_flat_atk_base(),
+             crit_rate = calculated_crit_rate_base(),
+             crit_damage = calculated_crit_damage_base(),
+             dmg_multiplier = calculated_dmg_multiplier_base(),
              hp_scaling = FALSE,
              def_scaling = FALSE) {
       if (hp_scaling) { # Check if HP Scaling is enabled
@@ -402,7 +441,7 @@ server <- function(input, output, session) {
 
       return(damage)
     }
-  ## Calculate atk_data ----------------------------------------------------------
+  ## Calculate data for ATK --------------------------------------------------------
 
   atk_data <- reactive({
     # Calculate relative damage increase as a percentage
@@ -411,26 +450,42 @@ server <- function(input, output, session) {
 
     atk_data <- tibble(
       base_atk = atk_character_data$ATK + atk_lc_data$ATK,
-      total_atk = base_atk * (1 + input$atk_percent / 100) + input$flat_atk,
+      total_atk_fix = base_atk * (1 + calculated_atk_percent_base() / 100) + calculated_flat_atk_base(),
+      base_damage_fixed = calculate_damage(
+        base_atk = base_atk,
+        skill_multiplier = input$skill_multiplier,
+        atk_percent = calculated_atk_percent_base(),
+        flat_atk = calculated_flat_atk_base(),
+        crit_rate = calculated_crit_rate_base(),
+        crit_damage = calculated_crit_damage_base(),
+        dmg_multiplier = calculated_dmg_multiplier_base(),
+        hp_scaling = input$hp_scaling,
+        def_scaling = input$def_scaling
+      ),
+      total_atk = base_atk * (1 + (calculated_atk_percent() + calculated_atk_percent_base()) / 100) + calculated_flat_atk_base() + calculated_flat_atk(),
       skill_multiplier = input$skill_multiplier,
-      base_damage =
+      base_damage_total =
         calculate_damage(
           base_atk = base_atk,
           skill_multiplier = input$skill_multiplier,
-          atk_percent = input$atk_percent_base,
-          flat_atk = input$flat_atk_base,
-          crit_rate = input$crit_rate_base,
-          crit_damage = input$crit_damage_base,
-          dmg_multiplier = input$dmg_multiplier_base,
+          atk_percent = calculated_atk_percent_base() + calculated_atk_percent(),
+          flat_atk = calculated_flat_atk_base() + calculated_flat_atk(),
+          crit_rate = calculated_crit_rate_base() + calculated_crit_rate(),
+          crit_damage = calculated_crit_damage_base() + calculated_crit_damage(),
+          dmg_multiplier = calculated_dmg_multiplier_base() + calculated_dmg_multiplier(),
           hp_scaling = input$hp_scaling,
           def_scaling = input$def_scaling
         )
     )
+    return(atk_data)
   })
 
   relative_damage_increase <- function(..., data = atk_data()) {
-    ((calculate_damage(...) - data$base_damage) / data$base_damage) * 100
+    ((calculate_damage(...) - data$base_damage_fixed) / data$base_damage_fixed) * 100
   }
+
+  ## Output ATK Plot ---------------------------------------------------------
+
 
   output$atk_plot <- renderPlot({
     # Create a ggplot base with updated Y-axis scale and labels
@@ -446,15 +501,13 @@ server <- function(input, output, session) {
 
     # Define a function to add geom_function and geom_point layers
     geom_function_base <- function(skill_multiplier = input$skill_multiplier,
-                                   atk_percent = input$atk_percent_base,
-                                   flat_atk = input$flat_atk_base,
-                                   crit_rate = input$crit_rate_base,
-                                   crit_damage = input$crit_damage_base,
-                                   dmg_multiplier = input$dmg_multiplier_base,
-                                   colour,
+                                   atk_percent = calculated_atk_percent_base(),
+                                   flat_atk = calculated_flat_atk_base(),
+                                   crit_rate = calculated_crit_rate_base(),
+                                   crit_damage = calculated_crit_damage_base(),
+                                   dmg_multiplier = calculated_dmg_multiplier_base(),
                                    data = atk_data(),
                                    legend_label = "Base") {
-      atk_percent <- input$atk_percent_base + atk_percent
       geom_func <- geom_function(
         fun = relative_damage_increase,
         args = list(
@@ -471,7 +524,7 @@ server <- function(input, output, session) {
       geom_pt <- geom_point(
         data = data,
         aes(
-          x = base_damage, y = relative_damage_increase(
+          x = base_atk, y = relative_damage_increase(
             base_atk = base_atk,
             skill_multiplier = skill_multiplier,
             atk_percent = atk_percent,
@@ -490,39 +543,30 @@ server <- function(input, output, session) {
     }
 
 
-    atk_checkbox <- reactive({
-      input$line %in% "ATK%"
-    })
-
-    # Store the geom_function plots
+    ## Store the geom_function plots ----
     geom_base <- geom_function_base(
       data = atk_data(),
-      colour = "black",
       legend_label = "Base"
     )
     geom_atk <- geom_function_base(
-      atk_percent = input$atk_percent,
-      flat_atk = input$flat_atk,
-      colour = "red",
+      atk_percent = calculated_atk_percent() + calculated_atk_percent_base(),
+      flat_atk = calculated_flat_atk() + calculated_flat_atk_base(),
       legend_label = "ATK"
     )
     geom_crit_rate <- geom_function_base(
-      crit_rate = input$crit_rate,
-      crit_damage = input$crit_damage_base,
-      colour = "orange",
+      crit_rate = calculated_crit_rate() + calculated_crit_rate_base(),
+      crit_damage = calculated_crit_damage_base(),
       legend_label = "CR"
     )
-      geom_crit_damage <- geom_function_base(
-        crit_rate = input$crit_rate_base,
-        crit_damage = input$crit_damage,
-        colour = "purple",
-        legend_label = "CD"
-      )
-      geom_dmg <- geom_function_base(
-        dmg_multiplier = input$dmg_multiplier,
-        colour = "darkgreen",
-        legend_label = "DMG"
-      )
+    geom_crit_damage <- geom_function_base(
+      crit_rate = calculated_crit_rate_base(),
+      crit_damage = calculated_crit_damage() + calculated_crit_damage_base(),
+      legend_label = "CD"
+    )
+    geom_dmg <- geom_function_base(
+      dmg_multiplier = calculated_dmg_multiplier() + calculated_dmg_multiplier_base(),
+      legend_label = "DMG"
+    )
 
     # Create a list to store the layers
     layers <- list()
@@ -553,6 +597,46 @@ server <- function(input, output, session) {
 
     # Display the final plot
     print(final_plot)
+  })
+
+  ## Render Table ----------------------------------------------------------------
+
+
+  output$character_stats_atk <- renderTable({
+    character_stats_atk <- tibble(
+      "Base ATK" = atk_data()$base_atk,
+      "Total ATK (Fixed)" = atk_data()$base_atk *
+        (1 + calculated_atk_percent_base() / 100) + calculated_flat_atk_base(),
+      "Base damage (Fixed)" = atk_data()$base_damage_fixed,
+      "Total ATK" = atk_data()$total_atk,
+      "Base damage Total" = atk_data()$base_damage_total,
+      "Relative Damage Increase (ATK)" = relative_damage_increase(
+        base_atk = atk_data()$base_atk,
+        atk_percent = calculated_atk_percent() + calculated_atk_percent_base(),
+        flat_atk = calculated_flat_atk() + calculated_flat_atk_base()
+      ),
+      "Relative Damage Increase (CR)" = relative_damage_increase(
+        base_atk = atk_data()$base_atk,
+        crit_rate = calculated_crit_rate() + calculated_crit_rate_base(),
+      ),
+      "Relative Damage Increase (CD)" = relative_damage_increase(
+        base_atk = atk_data()$base_atk,
+        crit_damage = calculated_crit_damage() + calculated_crit_damage_base(),
+      ),
+      "Relative Damage Increase (DMG)" = relative_damage_increase(
+        base_atk = atk_data()$base_atk,
+        dmg_multiplier = calculated_dmg_multiplier() + calculated_dmg_multiplier_base(),
+      )
+    )
+    return(character_stats_atk)
+  })
+  output$lc_stats <- renderTable({
+    atk_lc_data <- light_cone_data[light_cone_data$lc_name == input$atk_lc_selection, ]
+    lc_stats <- tibble(
+      "LC Name" = atk_lc_data$lc_name,
+      "LC Base HP" = atk_lc_data$HP,
+      "LC Base DEF" = atk_lc_data$DEF
+    )
   })
 }
 
